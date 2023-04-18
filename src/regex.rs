@@ -6,66 +6,51 @@ pub enum Regex {
     Repeat(Box<Regex>),
 }
 
-// Interprets the regex |r| against |line|. If it matches, the first return
-// value is true, and the second is the non-matching suffix of |line|.
-// Otherwise, the return value is (false, None).
-pub fn regex_match<'a>(r: &'a Regex, line: &'a str) -> (bool, Option<&'a str>) {
+// Interprets the regex |r| against |line|. If it matches, returns a Some value
+// containing the non-matching suffix of |line|. If the regex matched
+// completely, that suffix will be the empty string. Otherwise, if the regex
+// does not match |line|, returns None.
+pub fn regex_match<'a>(r: &'a Regex, line: &'a str) -> Option<&'a str> {
     match r {
         Regex::Literal(s) => {
             if line.len() < s.len() {
-                return (false, None);
+                return None;
             }
-            let (before, after) = line.split_at(s.len());
-            let matches = before.chars().zip(s.chars()).all(|(c1, c2)| c1 == c2);
-            (matches, Some(after))
+            let matches = line.chars().zip(s.chars()).all(|(c1, c2)| c1 == c2);
+            if matches {
+                Some(&line[s.len()..])
+            } else {
+                None
+            }
         }
         Regex::Concat(regexes) => {
             let mut line = &line[..];
             for r in regexes {
-                let (is_match, after) = regex_match(r, line);
-                if !is_match {
-                    return (false, None);
-                }
-                line = after.unwrap();
+                line = regex_match(r, line)?;
             }
-            (true, Some(line))
+            Some(line)
         }
         Regex::Choice(regexes) => {
             for r in regexes {
-                let (is_match, after) = regex_match(r, line);
-                if is_match {
-                    return (true, after);
+                let result = regex_match(r, line);
+                if result.is_some() {
+                    return result;
                 }
             }
-            (false, None)
+            None
         }
         Regex::Repeat(r) => {
             let mut line = &line[..];
             loop {
-                let (is_match, after) = regex_match(r, line);
-                if !is_match {
+                let result = regex_match(r, line);
+                if result.is_none() {
                     break;
                 }
-                line = after.unwrap();
+                line = result.unwrap();
             }
-            (true, Some(line))
+            Some(line)
         }
     }
-}
-
-// Splits |expr| into (left, right). The |left| string is guaranteed to contain
-// non-control characters. The right string is either empty or begins with a
-// control character.
-fn regex_split(expr: &str) -> (&str, &str) {
-    for (i, c) in expr.char_indices() {
-        match c {
-            '(' | ')' | '|' | '*' => {
-                return expr.split_at(i);
-            }
-            _ => {}
-        }
-    }
-    (expr, "")
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -107,53 +92,35 @@ fn tokenize(expr: &str) -> Vec<RegexToken> {
     return tokens;
 }
 
-fn parse_literal<'a>(tokens: &'a [RegexToken]) -> (Option<Regex>, &'a [RegexToken]) {
+fn parse_literal<'a>(tokens: &'a [RegexToken]) -> Option<(Regex, &'a [RegexToken])> {
     match tokens {
-        [RegexToken::Literal(s), tail @ ..] => (Some(Regex::Literal(s.to_string())), tail),
-        _ => (None, tokens),
+        [RegexToken::Literal(s), tail @ ..] => Some((Regex::Literal(s.to_string()), tail)),
+        _ => None,
     }
 }
 
-fn parse_parens<'a>(tokens: &'a [RegexToken]) -> (Option<Regex>, &'a [RegexToken]) {
-    println!("parse_parens( {:?} )", tokens);
-    match tokens {
-        [RegexToken::LeftParen, tail @ ..] => {
-            let mut depth = 1;
-            let split: Vec<&[RegexToken]> = tail
-                .split_inclusive(|c| {
-                    match c {
-                        RegexToken::LeftParen => depth += 1,
-                        RegexToken::RightParen => depth -= 1,
-                        _ => {}
-                    };
-                    depth > 0
-                })
-                .collect();
-
-            if split.is_empty() {
-                return (None, tokens);
-            }
-            let n = split.first().unwrap().len();
-
-            let (left, right) = tail.split_at(n);
-            println!("left, right = {:?}, {:?}", left, right);
-            return (parse_regex_tokens(left), right);
-        }
-        _ => (None, tokens),
+fn parse_parens<'a>(tokens: &'a [RegexToken]) -> Option<(Regex, &'a [RegexToken])> {
+    // Check that tokens begins with a left paren.
+    match tokens.first()? {
+        RegexToken::LeftParen => {}
+        _ => return None,
     }
+    // Consume the left paren.
+    let tokens = &tokens[1..];
+
+    // Parse the inner regex.
+    let (regex, leftovers) = parse_regex_tokens(tokens)?;
+
+    // Check that the next token is a right paren.
+    match leftovers.first()? {
+        RegexToken::RightParen => {}
+        _ => return None,
+    }
+
+    return Some((regex, &leftovers[1..]));
 }
 
-fn flatten_regexes(regexes: Vec<Option<Regex>>) -> Option<Regex> {
-    let mut regexes: Vec<Regex> = regexes.into_iter().flatten().collect();
-
-    match regexes.len() {
-        0 => None,
-        1 => Some(regexes.remove(0)),
-        _ => Some(Regex::Concat(regexes)),
-    }
-}
-
-fn parse_regex_tokens(tokens: &[RegexToken]) -> Option<Regex> {
+fn parse_regex_tokens<'a>(tokens: &'a [RegexToken]) -> Option<(Regex, &'a [RegexToken])> {
     let mut leftovers: &[RegexToken] = &tokens;
     let mut regexes = Vec::new();
     while leftovers.len() > 0 {
@@ -161,29 +128,53 @@ fn parse_regex_tokens(tokens: &[RegexToken]) -> Option<Regex> {
         let first = leftovers.first().unwrap();
         match first {
             RegexToken::Literal(s) => {
-                let (regex, leftovers_) = parse_literal(leftovers);
+                let (regex, leftovers_) = parse_literal(leftovers)?;
                 regexes.push(regex);
                 leftovers = leftovers_;
             }
             RegexToken::LeftParen => {
-                let (regex, leftovers_) = parse_parens(leftovers);
+                let (regex, leftovers_) = parse_parens(leftovers)?;
                 regexes.push(regex);
                 leftovers = leftovers_;
             }
             RegexToken::RightParen => {
-                println!("On Rightparen, leftovers = {:?}", leftovers);
-                leftovers = &leftovers[1..];
+                break;
             }
-            RegexToken::Pipe => panic!("pipe not implemented"),
-            RegexToken::Star => panic!("star not implemented"),
+            RegexToken::Pipe => {
+                // Consume the pipe.
+                leftovers = &leftovers[1..];
+
+                // Parse the next expression
+                let (regex, leftovers_) = parse_regex_tokens(leftovers)?;
+                leftovers = leftovers_;
+
+                // Wrap previous regex and |regex| in a Regex::Choice.
+                let operand = regexes.pop()?;
+
+                regexes.push(Regex::Choice(vec![operand, regex]));
+            }
+
+            RegexToken::Star => {
+                // Consume the star.
+                leftovers = &leftovers[1..];
+                // Wrap the last regex in a Regex::Repeat.
+                let operand = regexes.pop()?;
+                regexes.push(Regex::Repeat(Box::new(operand)));
+            }
         }
     }
-    flatten_regexes(regexes)
+
+    match regexes.len() {
+        0 => None,
+        1 => Some((regexes.pop()?, leftovers)),
+        _ => Some((Regex::Concat(regexes), leftovers)),
+    }
 }
 
 pub fn parse_regex(expr: &str) -> Option<Regex> {
     let tokens = tokenize(expr);
-    parse_regex_tokens(&tokens)
+    let (regex, leftovers) = parse_regex_tokens(&tokens)?;
+    Some(regex)
 }
 
 #[cfg(test)]
@@ -200,9 +191,8 @@ mod tests {
             ]))),
         ]);
 
-        let (is_match, tail) = regex_match(&test_regex, "foobabazazabababar");
+        let tail = regex_match(&test_regex, "foobabazazabababar");
 
-        assert!(is_match);
         assert_eq!(tail, Some("r"));
     }
 
@@ -226,21 +216,18 @@ mod tests {
 
     #[test]
     fn test_regex_parse_literal() {
-        // Literal
         let parsed = parse_regex("abc");
         assert_eq!(parsed, Some(Regex::Literal("abc".to_string())));
     }
 
     #[test]
     fn test_regex_parse_parens() {
-        // Parens
         let parsed = parse_regex("(abc)");
         assert_eq!(parsed, Some(Regex::Literal("abc".to_string())));
     }
 
     #[test]
     fn test_regex_parse_parens_double() {
-        // Parens
         let parsed = parse_regex("(a(b)c)");
         assert_eq!(
             parsed,
@@ -253,14 +240,28 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_parse_pipe() {
-        // Parens
+    fn test_regex_parse_pipe_2() {
         let parsed = parse_regex("a|bc");
         assert_eq!(
             parsed,
             Some(Regex::Choice(vec![
                 Regex::Literal("a".to_string()),
                 Regex::Literal("bc".to_string())
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_regex_parse_pipe_3() {
+        let parsed = parse_regex("a|bc|d");
+        assert_eq!(
+            parsed,
+            Some(Regex::Choice(vec![
+                Regex::Literal("a".to_string()),
+                Regex::Choice(vec![
+                    Regex::Literal("bc".to_string()),
+                    Regex::Literal("d".to_string())
+                ])
             ]))
         );
     }
@@ -281,5 +282,31 @@ mod tests {
                 Regex::Repeat(Box::new(Regex::Literal("b".to_string()))),
             ]))
         );
+        let parsed = parse_regex("a*b*");
+    }
+
+    #[test]
+    fn test_regex_parse_parens_star() {
+        let parsed = parse_regex("(abc)*");
+        assert_eq!(
+            parsed,
+            Some(Regex::Repeat(Box::new(Regex::Literal("abc".to_string()))))
+        );
+    }
+
+    #[test]
+    fn test_end_to_end() {
+        // Regex for matching one or more binary digits followed by '@'.
+        let pattern = "(0|1)(0|1)*@";
+
+        // Assert that the regex is parseable.
+        let regex = parse_regex(pattern);
+        assert!(regex.is_some());
+        let regex = regex.unwrap();
+
+        assert_eq!(regex_match(&regex, "1011@ abc"), Some(" abc"));
+        assert_eq!(regex_match(&regex, "abc"), None);
+        assert_eq!(regex_match(&regex, "abc 1011"), None);
+        assert_eq!(regex_match(&regex, "abc 1011@"), None);
     }
 }
