@@ -1,6 +1,8 @@
 // This program endeavors to translate classical regular expressions into X86_64
 // machine code. This is probably a terrible idea, but maybe it will be fast!
 
+#![feature(split_inclusive)]
+
 extern crate libc;
 
 mod regex;
@@ -8,8 +10,7 @@ mod regex;
 use std::ffi::CString;
 use std::os::raw::c_char;
 
-use crate::regex::{Regex, regex_match};
-
+use crate::regex::{regex_match, Regex};
 
 enum X64Reg {
     Rdi,
