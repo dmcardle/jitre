@@ -10,7 +10,7 @@ mod nfa;
 mod regex;
 
 use crate::machine::X64Instr;
-use crate::regex::{regex_match, Regex};
+use crate::regex::Regex;
 
 fn regex_compile(r: &Regex) -> Vec<X64Instr> {
     panic!("Not implemented")

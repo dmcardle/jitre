@@ -1,3 +1,4 @@
+/// A `Regex` is a classical regular expression.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Regex {
     Literal(String),
@@ -6,11 +7,13 @@ pub enum Regex {
     Repeat(Box<Regex>),
 }
 
-// Interprets the regex |r| against |line|. If it matches, returns a Some value
-// containing the non-matching suffix of |line|. If the regex matched
-// completely, that suffix will be the empty string. Otherwise, if the regex
-// does not match |line|, returns None.
-pub fn regex_match<'a>(r: &'a Regex, line: &'a str) -> Option<&'a str> {
+/// Interprets the regex `r` against the string `line`.
+///
+/// If it matches, returns a Some value
+/// containing the non-matching suffix of `line`. If the regex matched
+/// completely, that suffix will be the empty string. Otherwise, if the regex
+/// does not match `line`, returns None.
+pub fn regex_interpret<'a>(r: &'a Regex, line: &'a str) -> Option<&'a str> {
     match r {
         Regex::Literal(s) => {
             if line.len() < s.len() {
@@ -26,13 +29,13 @@ pub fn regex_match<'a>(r: &'a Regex, line: &'a str) -> Option<&'a str> {
         Regex::Concat(regexes) => {
             let mut line = &line[..];
             for r in regexes {
-                line = regex_match(r, line)?;
+                line = regex_interpret(r, line)?;
             }
             Some(line)
         }
         Regex::Choice(regexes) => {
             for r in regexes {
-                let result = regex_match(r, line);
+                let result = regex_interpret(r, line);
                 if result.is_some() {
                     return result;
                 }
@@ -42,7 +45,7 @@ pub fn regex_match<'a>(r: &'a Regex, line: &'a str) -> Option<&'a str> {
         Regex::Repeat(r) => {
             let mut line = &line[..];
             loop {
-                let result = regex_match(r, line);
+                let result = regex_interpret(r, line);
                 if result.is_none() {
                     break;
                 }
@@ -171,6 +174,7 @@ fn parse_regex_tokens<'a>(tokens: &'a [RegexToken]) -> Option<(Regex, &'a [Regex
     }
 }
 
+/// Parses classical regex notation.
 pub fn parse_regex(expr: &str) -> Option<Regex> {
     let tokens = tokenize(expr);
     let (regex, leftovers) = parse_regex_tokens(&tokens)?;
@@ -182,7 +186,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_regex_match() {
+    fn test_regex_interpret_simple() {
+        let test_regex = Regex::Repeat(Box::new(Regex::Literal("foo".to_string())));
+        let result = regex_interpret(&test_regex, "foofoofoo");
+        assert_eq!(result, Some(""));
+        let result = regex_interpret(&test_regex, "");
+        assert_eq!(result, Some(""));
+        let result = regex_interpret(&test_regex, "barbarbar");
+        assert_eq!(result, Some("barbarbar"));
+        let result = regex_interpret(&test_regex, "foofoofoobarbarbar");
+        assert_eq!(result, Some("barbarbar"));
+    }
+
+    #[test]
+    fn test_regex_interpret() {
         let test_regex = Regex::Concat(vec![
             Regex::Literal("foo".to_string()),
             Regex::Repeat(Box::new(Regex::Choice(vec![
@@ -191,7 +208,7 @@ mod tests {
             ]))),
         ]);
 
-        let tail = regex_match(&test_regex, "foobabazazabababar");
+        let tail = regex_interpret(&test_regex, "foobabazazabababar");
 
         assert_eq!(tail, Some("r"));
     }
@@ -304,9 +321,9 @@ mod tests {
         assert!(regex.is_some());
         let regex = regex.unwrap();
 
-        assert_eq!(regex_match(&regex, "1011@ abc"), Some(" abc"));
-        assert_eq!(regex_match(&regex, "abc"), None);
-        assert_eq!(regex_match(&regex, "abc 1011"), None);
-        assert_eq!(regex_match(&regex, "abc 1011@"), None);
+        assert_eq!(regex_interpret(&regex, "1011@ abc"), Some(" abc"));
+        assert_eq!(regex_interpret(&regex, "abc"), None);
+        assert_eq!(regex_interpret(&regex, "abc 1011"), None);
+        assert_eq!(regex_interpret(&regex, "abc 1011@"), None);
     }
 }
