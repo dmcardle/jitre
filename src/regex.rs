@@ -1,3 +1,5 @@
+use crate::nfa::Nfa;
+
 /// A `Regex` is a classical regular expression.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Regex {
@@ -30,6 +32,12 @@ impl Regex {
         let tokens = tokenize(expr);
         let (regex, leftovers) = parse_regex_tokens(&tokens)?;
         Some(regex)
+    }
+
+    /// Converts this Regex to an Nfa. The states are `u16`, and the alphabet
+    /// (Σ) is the set of `char` values.
+    pub fn to_nfa(&self) -> Nfa<u16, char> {
+        panic!("Not implemented");
     }
 
     /// Interprets the regex `r` against the string `line`.
