@@ -7,51 +7,60 @@ pub enum Regex {
     Repeat(Box<Regex>),
 }
 
-/// Interprets the regex `r` against the string `line`.
-///
-/// If it matches, returns a Some value
-/// containing the non-matching suffix of `line`. If the regex matched
-/// completely, that suffix will be the empty string. Otherwise, if the regex
-/// does not match `line`, returns None.
-pub fn regex_interpret<'a>(r: &'a Regex, line: &'a str) -> Option<&'a str> {
-    match r {
-        Regex::Literal(s) => {
-            if line.len() < s.len() {
-                return None;
+impl Regex {
+    /// Parses classical regex notation.
+    pub fn parse(expr: &str) -> Option<Regex> {
+        let tokens = tokenize(expr);
+        let (regex, leftovers) = parse_regex_tokens(&tokens)?;
+        Some(regex)
+    }
+
+    /// Interprets the regex `r` against the string `line`.
+    ///
+    /// If it matches, returns a Some value containing the non-matching suffix
+    /// of `line`. If the regex matched completely, that suffix will be the
+    /// empty string. Otherwise, if the regex does not match `line`, returns
+    /// None.
+    pub fn interpret<'a>(&self, line: &'a str) -> Option<&'a str> {
+        match self {
+            Regex::Literal(s) => {
+                if line.len() < s.len() {
+                    return None;
+                }
+                let matches = line.chars().zip(s.chars()).all(|(c1, c2)| c1 == c2);
+                if matches {
+                    Some(&line[s.len()..])
+                } else {
+                    None
+                }
             }
-            let matches = line.chars().zip(s.chars()).all(|(c1, c2)| c1 == c2);
-            if matches {
-                Some(&line[s.len()..])
-            } else {
+            Regex::Concat(regexes) => {
+                let mut line = &line[..];
+                for r in regexes {
+                    line = r.interpret(line)?;
+                }
+                Some(line)
+            }
+            Regex::Choice(regexes) => {
+                for r in regexes {
+                    let result = r.interpret(line);
+                    if result.is_some() {
+                        return result;
+                    }
+                }
                 None
             }
-        }
-        Regex::Concat(regexes) => {
-            let mut line = &line[..];
-            for r in regexes {
-                line = regex_interpret(r, line)?;
-            }
-            Some(line)
-        }
-        Regex::Choice(regexes) => {
-            for r in regexes {
-                let result = regex_interpret(r, line);
-                if result.is_some() {
-                    return result;
+            Regex::Repeat(r) => {
+                let mut line = &line[..];
+                loop {
+                    let result = r.interpret(line);
+                    if result.is_none() {
+                        break;
+                    }
+                    line = result.unwrap();
                 }
+                Some(line)
             }
-            None
-        }
-        Regex::Repeat(r) => {
-            let mut line = &line[..];
-            loop {
-                let result = regex_interpret(r, line);
-                if result.is_none() {
-                    break;
-                }
-                line = result.unwrap();
-            }
-            Some(line)
         }
     }
 }
@@ -174,13 +183,6 @@ fn parse_regex_tokens<'a>(tokens: &'a [RegexToken]) -> Option<(Regex, &'a [Regex
     }
 }
 
-/// Parses classical regex notation.
-pub fn parse_regex(expr: &str) -> Option<Regex> {
-    let tokens = tokenize(expr);
-    let (regex, leftovers) = parse_regex_tokens(&tokens)?;
-    Some(regex)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,13 +190,13 @@ mod tests {
     #[test]
     fn test_regex_interpret_simple() {
         let test_regex = Regex::Repeat(Box::new(Regex::Literal("foo".to_string())));
-        let result = regex_interpret(&test_regex, "foofoofoo");
+        let result = test_regex.interpret("foofoofoo");
         assert_eq!(result, Some(""));
-        let result = regex_interpret(&test_regex, "");
+        let result = test_regex.interpret("");
         assert_eq!(result, Some(""));
-        let result = regex_interpret(&test_regex, "barbarbar");
+        let result = test_regex.interpret("barbarbar");
         assert_eq!(result, Some("barbarbar"));
-        let result = regex_interpret(&test_regex, "foofoofoobarbarbar");
+        let result = test_regex.interpret("foofoofoobarbarbar");
         assert_eq!(result, Some("barbarbar"));
     }
 
@@ -208,8 +210,7 @@ mod tests {
             ]))),
         ]);
 
-        let tail = regex_interpret(&test_regex, "foobabazazabababar");
-
+        let tail = test_regex.interpret("foobabazazabababar");
         assert_eq!(tail, Some("r"));
     }
 
@@ -233,19 +234,19 @@ mod tests {
 
     #[test]
     fn test_regex_parse_literal() {
-        let parsed = parse_regex("abc");
+        let parsed = Regex::parse("abc");
         assert_eq!(parsed, Some(Regex::Literal("abc".to_string())));
     }
 
     #[test]
     fn test_regex_parse_parens() {
-        let parsed = parse_regex("(abc)");
+        let parsed = Regex::parse("(abc)");
         assert_eq!(parsed, Some(Regex::Literal("abc".to_string())));
     }
 
     #[test]
     fn test_regex_parse_parens_double() {
-        let parsed = parse_regex("(a(b)c)");
+        let parsed = Regex::parse("(a(b)c)");
         assert_eq!(
             parsed,
             Some(Regex::Concat(vec![
@@ -258,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_regex_parse_pipe_2() {
-        let parsed = parse_regex("a|bc");
+        let parsed = Regex::parse("a|bc");
         assert_eq!(
             parsed,
             Some(Regex::Choice(vec![
@@ -270,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_regex_parse_pipe_3() {
-        let parsed = parse_regex("a|bc|d");
+        let parsed = Regex::parse("a|bc|d");
         assert_eq!(
             parsed,
             Some(Regex::Choice(vec![
@@ -285,13 +286,13 @@ mod tests {
 
     #[test]
     fn test_regex_parse_star() {
-        let parsed = parse_regex("a*");
+        let parsed = Regex::parse("a*");
         assert_eq!(
             parsed,
             Some(Regex::Repeat(Box::new(Regex::Literal("a".to_string()))))
         );
 
-        let parsed = parse_regex("a*b*");
+        let parsed = Regex::parse("a*b*");
         assert_eq!(
             parsed,
             Some(Regex::Concat(vec![
@@ -299,12 +300,12 @@ mod tests {
                 Regex::Repeat(Box::new(Regex::Literal("b".to_string()))),
             ]))
         );
-        let parsed = parse_regex("a*b*");
+        let parsed = Regex::parse("a*b*");
     }
 
     #[test]
     fn test_regex_parse_parens_star() {
-        let parsed = parse_regex("(abc)*");
+        let parsed = Regex::parse("(abc)*");
         assert_eq!(
             parsed,
             Some(Regex::Repeat(Box::new(Regex::Literal("abc".to_string()))))
@@ -317,13 +318,13 @@ mod tests {
         let pattern = "(0|1)(0|1)*@";
 
         // Assert that the regex is parseable.
-        let regex = parse_regex(pattern);
+        let regex = Regex::parse(pattern);
         assert!(regex.is_some());
         let regex = regex.unwrap();
 
-        assert_eq!(regex_interpret(&regex, "1011@ abc"), Some(" abc"));
-        assert_eq!(regex_interpret(&regex, "abc"), None);
-        assert_eq!(regex_interpret(&regex, "abc 1011"), None);
-        assert_eq!(regex_interpret(&regex, "abc 1011@"), None);
+        assert_eq!(regex.interpret("1011@ abc"), Some(" abc"));
+        assert_eq!(regex.interpret("abc"), None);
+        assert_eq!(regex.interpret("abc 1011"), None);
+        assert_eq!(regex.interpret("abc 1011@"), None);
     }
 }
