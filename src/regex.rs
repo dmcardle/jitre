@@ -9,6 +9,23 @@ pub enum Regex {
 
 impl Regex {
     /// Parses classical regex notation.
+    ///
+    /// Grammar:
+    ///
+    /// ```
+    /// <regex> ::= <literal>
+    ///           | <regex> <regex>        /* concatenation */
+    ///           | <regex> '|' <regex>    /* choice */
+    ///           | <regex> '*'            /* repetition */
+    /// ```
+    ///
+    /// `<literal>` is defined as a sequence of any ASCII characters.
+    ///
+    /// TODO: Add support for escape sequences, e.g. so we can parse a literal
+    /// asterisk.
+    ///
+    /// TODO: Read up on UTF-8; probably want to support this instead of ASCII.
+    ///
     pub fn parse(expr: &str) -> Option<Regex> {
         let tokens = tokenize(expr);
         let (regex, leftovers) = parse_regex_tokens(&tokens)?;
