@@ -34,9 +34,10 @@ impl Regex {
         Some(regex)
     }
 
-    /// Converts this Regex to an Nfa. The states are `u16`, and the alphabet
-    /// (Σ) is the set of `char` values.
-    pub fn to_nfa(&self) -> Nfa<u16, char> {
+    /// Converts this Regex to an Nfa using Thompson's construction.
+    ///
+    /// The states are `u16`, and the alphabet (Σ) is the set of `char` values.
+    pub fn to_nfa(&self) -> Nfa<u16, u8> {
         panic!("Not implemented");
     }
 
@@ -116,6 +117,7 @@ fn tokenize(expr: &str) -> Vec<RegexToken> {
         match c {
             '(' => tokens.push(RegexToken::LeftParen),
             ')' => tokens.push(RegexToken::RightParen),
+
             '|' => tokens.push(RegexToken::Pipe),
             '*' => tokens.push(RegexToken::Star),
             _ => literal.push(c),
@@ -179,6 +181,7 @@ fn parse_regex_tokens<'a>(tokens: &'a [RegexToken]) -> Option<(Regex, &'a [Regex
             }
             RegexToken::Pipe => {
                 // Consume the pipe.
+
                 leftovers = &leftovers[1..];
 
                 // Parse the next expression
@@ -223,6 +226,14 @@ mod tests {
         assert_eq!(result, Some("barbarbar"));
         let result = test_regex.interpret("foofoofoobarbarbar");
         assert_eq!(result, Some("barbarbar"));
+    }
+
+    #[test]
+    fn test_regex_to_nfa() {
+        let test_regex = Regex::Repeat(Box::new(Regex::Literal("foo".to_string())));
+        let nfa = test_regex.to_nfa();
+        let result = nfa.simulate("foofoofoo".as_bytes());
+        println!("{:?}", result);
     }
 
     #[test]
@@ -338,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn test_end_to_end() {
+    fn test_regex_parse_interpret() {
         // Regex for matching one or more binary digits followed by '@'.
         let pattern = "(0|1)(0|1)*@";
 
