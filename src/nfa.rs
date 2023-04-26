@@ -16,58 +16,50 @@ pub struct Dfa<State, Character> {
     accept_states: HashSet<State>,
 }
 
-impl Nfa<u64, u8> {
-    pub fn new() -> Nfa<u64, u8> {
-        Nfa::<u64, u8> {
-            transition: HashMap::new(),
-            epsilon_transition: HashMap::new(),
-            start_state: 0u64,
-            accept_states: HashSet::new(),
-            state_counter: 2u64,
-        }
-    }
-
-    pub fn get_start_state(&self) -> u64 {
+impl<
+        State: std::cmp::Eq + std::hash::Hash + std::marker::Copy,
+        Character: std::cmp::Eq + std::hash::Hash + std::marker::Copy,
+    > Nfa<State, Character>
+{
+    /// Get this NFA's start state.
+    pub fn start_state(&self) -> State {
         self.start_state
     }
 
-    /// Get a state ID that is not already in use.
-    pub fn get_fresh_state(&mut self) -> u64 {
-        let fresh_state = self.state_counter;
-        self.state_counter += 1;
-        fresh_state
-    }
-
-    pub fn make_accept_state(&mut self, state: u64) {
+    /// Remember `state` as an accept state.
+    pub fn set_accept(&mut self, state: State) {
         self.accept_states.insert(state);
     }
 
-    pub fn add_transition(&mut self, from: u64, on: u8, to: u64) {
+    /// Save a non-epsilon transition rule.
+    pub fn add_transition(&mut self, from: State, on: Character, to: State) {
         let key = (from, on);
         match self.transition.get_mut(&key) {
             Some(to_states) => {
                 to_states.insert(to);
             }
             None => {
-                let to_set: HashSet<u64> = [to].iter().cloned().collect();
+                let to_set: HashSet<State> = [to].iter().cloned().collect();
                 self.transition.insert((from, on), to_set);
             }
         }
     }
 
-    pub fn add_epsilon_transition(&mut self, from: u64, to: u64) {
+    /// Save an epsilon transition rule.
+    pub fn add_epsilon(&mut self, from: State, to: State) {
         match self.epsilon_transition.get_mut(&from) {
             Some(to_states) => {
                 to_states.insert(to);
             }
             None => {
-                let to_set: HashSet<u64> = [to].iter().cloned().collect();
+                let to_set: HashSet<State> = [to].iter().cloned().collect();
                 self.epsilon_transition.insert(from, to_set);
             }
         }
     }
 
-    pub fn epsilon_transitive_closure(&self, from: u64) -> HashSet<u64> {
+    /// Find all the states reachable via one or more epsilon transitions.
+    pub fn epsilon_transitive_closure(&self, from: State) -> HashSet<State> {
         let mut seen = HashSet::new();
         let mut remaining = vec![from];
         while remaining.len() > 0 {
@@ -85,7 +77,7 @@ impl Nfa<u64, u8> {
     }
 
     /// Simulate the NFA, keeping track of all possible states.
-    pub fn simulate<'a>(&self, s: &'a [u8]) -> Option<&'a [u8]> {
+    pub fn simulate<'a>(&self, s: &'a [Character]) -> Option<&'a [Character]> {
         println!("ENTER SIMULATE");
         if s.len() == 0 {
             return Some(s);
@@ -133,6 +125,25 @@ impl Nfa<u64, u8> {
     }
 }
 
+impl Nfa<u64, u8> {
+    pub fn new() -> Nfa<u64, u8> {
+        Nfa::<u64, u8> {
+            transition: HashMap::new(),
+            epsilon_transition: HashMap::new(),
+            start_state: 0u64,
+            accept_states: HashSet::new(),
+            state_counter: 2u64,
+        }
+    }
+
+    /// Get a state ID that is not already in use.
+    pub fn get_fresh_state(&mut self) -> u64 {
+        let fresh_state = self.state_counter;
+        self.state_counter += 1;
+        fresh_state
+    }
+}
+
 pub fn nfa_to_dfa<State, Character>(nfa: &Nfa<State, Character>) -> Dfa<State, Character> {
     panic!("Not implemented");
 }
@@ -144,26 +155,26 @@ mod tests {
     #[test]
     fn test_simulate_epsilon() {
         let mut nfa = Nfa::<u64, u8>::new();
-        let q1 = nfa.get_start_state();
+        let q1 = nfa.start_state();
         let q2 = nfa.get_fresh_state();
-        nfa.make_accept_state(q2);
+        nfa.set_accept(q2);
         assert_eq!(nfa.simulate("".as_bytes()), Some(&[][..]));
 
-        nfa.add_epsilon_transition(q1, q2);
+        nfa.add_epsilon(q1, q2);
         assert_eq!(nfa.simulate("".as_bytes()), Some(&[][..]));
     }
 
     #[test]
     fn test_simulate_epsilon_twice() {
         let mut nfa = Nfa::<u64, u8>::new();
-        let q1 = nfa.get_start_state();
+        let q1 = nfa.start_state();
         let q2 = nfa.get_fresh_state();
         let q3 = nfa.get_fresh_state();
-        nfa.make_accept_state(q3);
+        nfa.set_accept(q3);
 
         nfa.add_transition(q1, b'a', q1);
-        nfa.add_epsilon_transition(q1, q2);
-        nfa.add_epsilon_transition(q2, q3);
+        nfa.add_epsilon(q1, q2);
+        nfa.add_epsilon(q2, q3);
         assert_eq!(nfa.simulate("".as_bytes()), Some(&[][..]));
         assert_eq!(nfa.simulate("a".as_bytes()), Some(&[][..]));
         assert_eq!(nfa.simulate("aa".as_bytes()), Some(&[][..]));
@@ -187,11 +198,11 @@ mod tests {
         //
 
         let mut nfa = Nfa::<u64, u8>::new();
-        let q1 = nfa.get_start_state();
+        let q1 = nfa.start_state();
         let q2 = nfa.get_fresh_state();
         let q3 = nfa.get_fresh_state();
-        nfa.make_accept_state(q2);
-        nfa.make_accept_state(q3);
+        nfa.set_accept(q2);
+        nfa.set_accept(q3);
 
         nfa.add_transition(q1, b'a', q2);
         nfa.add_transition(q1, b'a', q3);
