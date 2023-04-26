@@ -4,6 +4,7 @@ use std::collections::HashSet;
 // A Nondeterministic Finite Automaton is defined as (Q, Sigma, Delta, q0, F).
 pub struct Nfa<State, Character> {
     transition: HashMap<(State, Character), HashSet<State>>,
+    epsilon_transition: HashMap<State, HashSet<State>>,
     start_state: State,
     accept_states: HashSet<State>,
     state_counter: State,
@@ -19,6 +20,7 @@ impl Nfa<u64, u8> {
     pub fn new() -> Nfa<u64, u8> {
         Nfa::<u64, u8> {
             transition: HashMap::new(),
+            epsilon_transition: HashMap::new(),
             start_state: 0u64,
             accept_states: HashSet::new(),
             state_counter: 2u64,
@@ -42,33 +44,77 @@ impl Nfa<u64, u8> {
 
     pub fn add_transition(&mut self, from: u64, on: u8, to: u64) {
         let key = (from, on);
-        let to: HashSet<u64> = [to].iter().cloned().collect();
-
         match self.transition.get_mut(&key) {
             Some(to_states) => {
-                to_states.extend(&to);
+                to_states.insert(to);
             }
             None => {
-                self.transition.insert((from, on), to);
+                let to_set: HashSet<u64> = [to].iter().cloned().collect();
+                self.transition.insert((from, on), to_set);
             }
         }
     }
 
+    pub fn add_epsilon_transition(&mut self, from: u64, to: u64) {
+        match self.epsilon_transition.get_mut(&from) {
+            Some(to_states) => {
+                to_states.insert(to);
+            }
+            None => {
+                let to_set: HashSet<u64> = [to].iter().cloned().collect();
+                self.epsilon_transition.insert(from, to_set);
+            }
+        }
+    }
+
+    pub fn epsilon_transitive_closure(&self, from: u64) -> HashSet<u64> {
+        let mut seen = HashSet::new();
+        let mut remaining = vec![from];
+        while remaining.len() > 0 {
+            let state = remaining.pop().unwrap();
+            match self.epsilon_transition.get(&state) {
+                Some(qs) => {
+                    seen.extend(qs);
+                    // No need to rexplore `state`.
+                    remaining.extend(qs.iter().filter(|&q| *q != state));
+                }
+                None => {}
+            };
+        }
+        seen
+    }
+
     /// Simulate the NFA, keeping track of all possible states.
     pub fn simulate<'a>(&self, s: &'a [u8]) -> Option<&'a [u8]> {
+        println!("ENTER SIMULATE");
+        if s.len() == 0 {
+            return Some(s);
+        }
+
         let mut best_answer = None;
         let mut state_superposition = HashSet::new();
         state_superposition.insert(self.start_state);
+        let epsilon_reachable = self.epsilon_transitive_closure(self.start_state);
+        state_superposition.extend(epsilon_reachable);
 
+        let empty = HashSet::new();
         for (i, c) in s.iter().enumerate() {
             state_superposition = state_superposition
                 .into_iter()
-                .map(|q| self.transition.get(&(q, *c)))
-                .filter(|q_set| q_set.is_some())
-                .map(|q_set: Option<_>| q_set.unwrap())
-                .filter(|q_set| q_set.len() > 0)
+                .map(|q| {
+                    let mut result = HashSet::new();
+                    let regular = match self.transition.get(&(q, *c)) {
+                        Some(x) => x,
+                        None => &empty,
+                    };
+                    result.extend(regular);
+                    for &state in regular {
+                        let epsilon_reachable = self.epsilon_transitive_closure(state);
+                        result.extend(epsilon_reachable);
+                    }
+                    result
+                })
                 .flatten()
-                .cloned()
                 .collect();
 
             // There's no possibilities for parsing up to position |i|.
@@ -96,7 +142,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_simple() {
+    fn test_simulate_epsilon() {
+        let mut nfa = Nfa::<u64, u8>::new();
+        let q1 = nfa.get_start_state();
+        let q2 = nfa.get_fresh_state();
+        nfa.make_accept_state(q2);
+        assert_eq!(nfa.simulate("".as_bytes()), Some(&[][..]));
+
+        nfa.add_epsilon_transition(q1, q2);
+        assert_eq!(nfa.simulate("".as_bytes()), Some(&[][..]));
+    }
+
+    #[test]
+    fn test_simulate_epsilon_twice() {
+        let mut nfa = Nfa::<u64, u8>::new();
+        let q1 = nfa.get_start_state();
+        let q2 = nfa.get_fresh_state();
+        let q3 = nfa.get_fresh_state();
+        nfa.make_accept_state(q3);
+
+        nfa.add_transition(q1, b'a', q1);
+        nfa.add_epsilon_transition(q1, q2);
+        nfa.add_epsilon_transition(q2, q3);
+        assert_eq!(nfa.simulate("".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("a".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("aa".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("aab".as_bytes()), Some(&"b".as_bytes()[..]));
+    }
+
+    #[test]
+    fn test_simulate_simple() {
         // Build an NFA that parses the regex /a(b*|c*)/.
         //
         // Graphically, with accept states q2 and q3:
@@ -124,11 +199,11 @@ mod tests {
         nfa.add_transition(q3, b'c', q3);
 
         // Fails because there's no matching transition from the start state.
-        assert_eq!(nfa.simulate("".as_bytes()), None);
         assert_eq!(nfa.simulate("bc".as_bytes()), None);
         assert_eq!(nfa.simulate("xyz".as_bytes()), None);
 
         // Parses completely.
+        assert_eq!(nfa.simulate("".as_bytes()), Some(&[][..]));
         assert_eq!(nfa.simulate("abbb".as_bytes()), Some(&[][..]));
         assert_eq!(nfa.simulate("a".as_bytes()), Some(&[][..]));
 
