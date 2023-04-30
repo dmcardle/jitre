@@ -30,7 +30,7 @@ impl Regex {
     ///
     pub fn parse(expr: &str) -> Option<Regex> {
         let tokens = tokenize(expr);
-        let (regex, leftovers) = parse_regex_tokens(&tokens)?;
+        let (regex, _leftovers) = parse_regex_tokens(&tokens)?;
         Some(regex)
     }
 
@@ -104,7 +104,7 @@ fn tokenize(expr: &str) -> Vec<RegexToken> {
     let mut tokens = Vec::new();
     let mut literal = String::new();
 
-    for (i, c) in expr.char_indices() {
+    for c in expr.chars() {
         match c {
             '(' | ')' | '|' | '*' => {
                 if !literal.is_empty() {
@@ -163,10 +163,9 @@ fn parse_regex_tokens<'a>(tokens: &'a [RegexToken]) -> Option<(Regex, &'a [Regex
     let mut leftovers: &[RegexToken] = &tokens;
     let mut regexes = Vec::new();
     while leftovers.len() > 0 {
-        println!("*** leftovers = {:?}", leftovers);
         let first = leftovers.first().unwrap();
         match first {
-            RegexToken::Literal(s) => {
+            RegexToken::Literal(_) => {
                 let (regex, leftovers_) = parse_literal(leftovers)?;
                 regexes.push(regex);
                 leftovers = leftovers_;
@@ -336,7 +335,6 @@ mod tests {
                 Regex::Repeat(Box::new(Regex::Literal("b".to_string()))),
             ]))
         );
-        let parsed = Regex::parse("a*b*");
     }
 
     #[test]

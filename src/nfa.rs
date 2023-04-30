@@ -1,20 +1,21 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-// A Nondeterministic Finite Automaton is defined as (Q, Sigma, Delta, q0, F).
-pub struct Nfa<State, Character> {
-    transition: HashMap<(State, Character), HashSet<State>>,
-    epsilon_transition: HashMap<State, HashSet<State>>,
+/// A Nondeterministic Finite Automaton (NFA) is defined as the tuple (Q, Sigma,
+/// Delta, q0, F). The difference from a Deterministic Finite Automaton (DFA) is
+/// the transition function. For NFAs, the transition function Delta has type (Q
+/// x Sigma) -> 2^Sigma, whereas for DFAs the transition function delta has type
+/// (Q x Sigma) -> Sigma.
+pub struct Automaton<State, Character, TransitionRange> {
+    transition: HashMap<(State, Character), TransitionRange>,
+    epsilon_transition: HashMap<State, TransitionRange>,
     start_state: State,
     accept_states: HashSet<State>,
     state_counter: State,
 }
 
-pub struct Dfa<State, Character> {
-    transition: HashMap<(State, Character), State>,
-    start_state: State,
-    accept_states: HashSet<State>,
-}
+pub type Nfa<State, Character> = Automaton<State, Character, HashSet<State>>;
+pub type Dfa<State, Character> = Automaton<State, Character, State>;
 
 impl<
         State: std::cmp::Eq + std::hash::Hash + std::marker::Copy,
@@ -78,7 +79,6 @@ impl<
 
     /// Simulate the NFA, keeping track of all possible states.
     pub fn simulate<'a>(&self, s: &'a [Character]) -> Option<&'a [Character]> {
-        println!("ENTER SIMULATE");
         if s.len() == 0 {
             return Some(s);
         }

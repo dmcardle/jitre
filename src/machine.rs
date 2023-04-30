@@ -1,7 +1,7 @@
 use std::ffi::CString;
 use std::os::raw::c_char;
 
-use crate::nfa::{nfa_to_dfa, Dfa, Nfa};
+use crate::nfa::Dfa;
 
 pub enum X64Reg {
     Rdi,

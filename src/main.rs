@@ -9,13 +9,6 @@ mod machine;
 mod nfa;
 mod regex;
 
-use crate::machine::X64Instr;
-use crate::regex::Regex;
-
-fn regex_compile(r: &Regex) -> Vec<X64Instr> {
-    panic!("Not implemented")
-}
-
 fn main() {
     println!("TBD!");
 }
