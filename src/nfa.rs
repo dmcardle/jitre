@@ -132,7 +132,7 @@ impl Nfa<u64, u8> {
             epsilon_transition: HashMap::new(),
             start_state: 0u64,
             accept_states: HashSet::new(),
-            state_counter: 2u64,
+            state_counter: 1u64,
         }
     }
 
@@ -141,6 +141,56 @@ impl Nfa<u64, u8> {
         let fresh_state = self.state_counter;
         self.state_counter += 1;
         fresh_state
+    }
+
+    fn get_corresponding_state(&mut self, map: &mut HashMap<u64, u64>, qOther: u64) -> u64 {
+        match map.get(&qOther) {
+            Some(q) => *q,
+            None => {
+                let qFresh = self.get_fresh_state();
+                map.insert(qOther, qFresh);
+                qFresh
+            }
+        }
+    }
+
+    /// Tack the `other` NFA on the end of this one.
+    pub fn attach(&mut self, other: Nfa<u64, u8>) {
+        // For each state in `other`, allocate a corresponding fresh state.
+        let mut state_map: HashMap<u64, u64> = HashMap::new();
+
+        for ((from, on), to_states) in other.transition.iter() {
+            let from = self.get_corresponding_state(&mut state_map, *from);
+
+            for to in to_states.iter() {
+                let to = self.get_corresponding_state(&mut state_map, *to);
+                self.add_transition(from, *on, to);
+            }
+        }
+
+        for (from, to_states) in other.epsilon_transition.iter() {
+            let from = self.get_corresponding_state(&mut state_map, *from);
+            for to in to_states.iter() {
+                let to = self.get_corresponding_state(&mut state_map, *to);
+                self.add_epsilon(from, to);
+            }
+        }
+
+        // Connect each accept state of `self` to the start state of `other`.
+        let accept_states = self.accept_states.clone();
+        self.accept_states.clear();
+
+        // Add each accept state in `other` to this NFA.
+        for other_accept_state in other.accept_states.iter() {
+            let q_other = self.get_corresponding_state(&mut state_map, *other_accept_state);
+            self.accept_states.insert(q_other);
+        }
+
+        // Attach each of this NFA's accept states to the other NFA's start state.
+        let q_other_start = self.get_corresponding_state(&mut state_map, other.start_state);
+        for q_accept in accept_states {
+            self.add_epsilon(q_accept, q_other_start);
+        }
     }
 }
 
@@ -221,5 +271,40 @@ mod tests {
         // Parses partially.
         assert_eq!(nfa.simulate("abc".as_bytes()), Some(&"abc".as_bytes()[2..]));
         assert_eq!(nfa.simulate("acb".as_bytes()), Some(&"acb".as_bytes()[2..]));
+    }
+
+    #[test]
+    fn test_attach() {
+        // Accepts /a(aa)*/, i.e. an odd number of 'a' characters.
+        let mut nfa_a = Nfa::<u64, u8>::new();
+        let q1 = nfa_a.start_state();
+        let q2 = nfa_a.get_fresh_state();
+        let q3 = nfa_a.get_fresh_state();
+        nfa_a.set_accept(q3);
+        nfa_a.add_epsilon(q1, q2);
+        nfa_a.add_transition(q2, b'a', q3);
+        nfa_a.add_transition(q3, b'a', q2);
+
+        // Accepts /b*/.
+        let mut nfa_b = Nfa::<u64, u8>::new();
+        let q1 = nfa_b.start_state();
+        nfa_b.set_accept(q1);
+        nfa_b.add_transition(q1, b'b', q1);
+
+        // Sanity check on `nfa_b`.
+        assert_eq!(nfa_b.simulate("bb".as_bytes()), Some(&[][..]));
+
+        // Attach `nfa_b` to the end of `nfa_b`. Now, `nfa_a` accepts /a(aa)*b*/.
+        nfa_a.attach(nfa_b);
+
+        assert_eq!(nfa_a.simulate("bb".as_bytes()), None);
+        assert_eq!(nfa_a.simulate("bba".as_bytes()), None);
+
+        // Parses completely.
+        assert_eq!(nfa_a.simulate("".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa_a.simulate("a".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa_a.simulate("aaaaa".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa_a.simulate("ab".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa_a.simulate("abbb".as_bytes()), Some(&[][..]));
     }
 }
