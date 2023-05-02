@@ -38,7 +38,49 @@ impl Regex {
     ///
     /// The states are `u16`, and the alphabet (Σ) is the set of `char` values.
     pub fn to_nfa(&self) -> Nfa<u64, u8> {
-        panic!("Not implemented");
+        let mut nfa = Nfa::new();
+        match self {
+            Regex::Literal(s) => {
+                let mut prev_state = nfa.start_state();
+                for c in s.bytes() {
+                    let new_state = nfa.get_fresh_state();
+                    nfa.add_transition(prev_state, c, new_state);
+                    prev_state = new_state;
+                }
+                nfa.set_accept(prev_state);
+            }
+            Regex::Concat(rs) => {
+                for r in rs.iter() {
+                    nfa.append(r.to_nfa());
+                }
+            }
+            Regex::Choice(rs) => {
+                let nfa_choices = rs.iter().map(|r| r.to_nfa());
+                for choice in nfa_choices {
+                    let (q_choice_start, orig_accept_states) = nfa.join(choice);
+
+                    // The original accept states should still be valid.
+                    for q in orig_accept_states {
+                        nfa.set_accept(q);
+                    }
+
+                    // Each choice's sub-NFA is reachable by an epsilon
+                    // transition from the start state.
+                    nfa.add_epsilon(nfa.start_state(), q_choice_start);
+                }
+            }
+            Regex::Repeat(r) => {
+                // After appending `r`, each of its accept states will have a
+                // corresponding accept state in `nfa`.
+                nfa.append(r.to_nfa());
+
+                let accept_states: Vec<u64> = nfa.accept_states().copied().collect();
+                for q_accept in accept_states {
+                    nfa.add_epsilon(q_accept, nfa.start_state());
+                }
+            }
+        }
+        nfa
     }
 
     /// Interprets the regex `r` against the string `line`.
@@ -228,11 +270,64 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_to_nfa() {
+    fn test_regex_to_nfa_literal() {
+        let test_regex = Regex::Literal("foo".to_string());
+        let nfa = test_regex.to_nfa();
+        assert_eq!(nfa.simulate("fo".as_bytes()), None);
+        assert_eq!(nfa.simulate("foo".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("foop".as_bytes()), Some("p".as_bytes()));
+    }
+
+    #[test]
+    fn test_regex_to_nfa_concat() {
+        let test_regex = Regex::Concat(vec![Regex::Literal("foo".to_string())]);
+        let nfa = test_regex.to_nfa();
+        assert_eq!(nfa.simulate("fo".as_bytes()), None);
+        assert_eq!(nfa.simulate("foo".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("foop".as_bytes()), Some("p".as_bytes()));
+
+        let test_regex = Regex::Concat(vec![
+            Regex::Literal("foo".to_string()),
+            Regex::Literal("bar".to_string()),
+        ]);
+        let nfa = test_regex.to_nfa();
+        assert_eq!(nfa.simulate("fo".as_bytes()), None);
+        assert_eq!(nfa.simulate("foo".as_bytes()), None);
+        assert_eq!(nfa.simulate("foob".as_bytes()), None);
+        assert_eq!(nfa.simulate("foobar".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("foobarp".as_bytes()), Some("p".as_bytes()));
+    }
+
+    #[test]
+    fn test_regex_to_nfa_choice() {
+        let test_regex = Regex::Choice(vec![Regex::Literal("foo".to_string())]);
+        let nfa = test_regex.to_nfa();
+        assert_eq!(nfa.simulate("fo".as_bytes()), None);
+        assert_eq!(nfa.simulate("foo".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("foop".as_bytes()), Some("p".as_bytes()));
+
+        let test_regex = Regex::Choice(vec![
+            Regex::Literal("foo".to_string()),
+            Regex::Literal("bar".to_string()),
+        ]);
+        let nfa = test_regex.to_nfa();
+        assert_eq!(nfa.simulate("fo".as_bytes()), None);
+        assert_eq!(nfa.simulate("foo".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("foob".as_bytes()), Some("b".as_bytes()));
+        assert_eq!(nfa.simulate("b".as_bytes()), None);
+        assert_eq!(nfa.simulate("bar".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("barf".as_bytes()), Some("f".as_bytes()));
+    }
+
+    #[test]
+    fn test_regex_to_nfa_repeat() {
         let test_regex = Regex::Repeat(Box::new(Regex::Literal("foo".to_string())));
         let nfa = test_regex.to_nfa();
-        let result = nfa.simulate("foofoofoo".as_bytes());
-        println!("{:?}", result);
+        assert_eq!(nfa.simulate("fo".as_bytes()), None);
+        assert_eq!(nfa.simulate("foo".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("foof".as_bytes()), Some("f".as_bytes()));
+        assert_eq!(nfa.simulate("foofoo".as_bytes()), Some(&[][..]));
+        assert_eq!(nfa.simulate("foofoof".as_bytes()), Some("f".as_bytes()));
     }
 
     #[test]
@@ -360,5 +455,15 @@ mod tests {
         assert_eq!(regex.interpret("abc"), None);
         assert_eq!(regex.interpret("abc 1011"), None);
         assert_eq!(regex.interpret("abc 1011@"), None);
+
+        // Test converted NFA.
+        let nfa = regex.to_nfa();
+        assert_eq!(
+            nfa.simulate("1011@ abc".as_bytes()),
+            Some(" abc".as_bytes())
+        );
+        assert_eq!(nfa.simulate("abc".as_bytes()), None);
+        assert_eq!(nfa.simulate("abc 1011".as_bytes()), None);
+        assert_eq!(nfa.simulate("abc 1011@".as_bytes()), None);
     }
 }

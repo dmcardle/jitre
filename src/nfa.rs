@@ -32,6 +32,10 @@ impl<
         self.accept_states.insert(state);
     }
 
+    pub fn accept_states(&self) -> impl Iterator<Item = &State> {
+        self.accept_states.iter()
+    }
+
     /// Save a non-epsilon transition rule.
     pub fn add_transition(&mut self, from: State, on: Character, to: State) {
         let key = (from, on);
@@ -155,7 +159,29 @@ impl Nfa<u64, u8> {
     }
 
     /// Tack the `other` NFA on the end of this one.
-    pub fn attach(&mut self, other: Nfa<u64, u8>) {
+    pub fn append(&mut self, other: Nfa<u64, u8>) {
+        let (q_other_start, orig_accept_states) = self.join(other);
+
+        // Attach each of this NFA's accept states to the other NFA's start state.
+        for &q_accept in orig_accept_states.iter() {
+            self.add_epsilon(q_accept, q_other_start);
+        }
+
+        // Edge case: if this NFA originally had no accept states, wire its
+        // start state directly to the other NFA's start state.
+        if orig_accept_states.len() == 0 {
+            self.add_epsilon(self.start_state(), q_other_start);
+        }
+    }
+
+    /// Absorbs `other` into this NFA.
+    ///
+    /// Replaces this NFA's accept states with those of `other`.
+    ///
+    /// Returns a tuple. The first element is the new start state corresponding
+    /// to `other`'s start state. The second element is the original set of
+    /// accept states.
+    pub fn join(&mut self, other: Nfa<u64, u8>) -> (u64, HashSet<u64>) {
         // For each state in `other`, allocate a corresponding fresh state.
         let mut state_map: HashMap<u64, u64> = HashMap::new();
 
@@ -177,6 +203,7 @@ impl Nfa<u64, u8> {
         }
 
         // Connect each accept state of `self` to the start state of `other`.
+
         let accept_states = self.accept_states.clone();
         self.accept_states.clear();
 
@@ -186,11 +213,8 @@ impl Nfa<u64, u8> {
             self.accept_states.insert(q_other);
         }
 
-        // Attach each of this NFA's accept states to the other NFA's start state.
         let q_other_start = self.get_corresponding_state(&mut state_map, other.start_state);
-        for q_accept in accept_states {
-            self.add_epsilon(q_accept, q_other_start);
-        }
+        (q_other_start, accept_states)
     }
 }
 
@@ -274,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn test_attach() {
+    fn test_append() {
         // Accepts /a(aa)*/, i.e. an odd number of 'a' characters.
         let mut nfa_a = Nfa::<u64, u8>::new();
         let q1 = nfa_a.start_state();
@@ -294,8 +318,8 @@ mod tests {
         // Sanity check on `nfa_b`.
         assert_eq!(nfa_b.simulate("bb".as_bytes()), Some(&[][..]));
 
-        // Attach `nfa_b` to the end of `nfa_b`. Now, `nfa_a` accepts /a(aa)*b*/.
-        nfa_a.attach(nfa_b);
+        // Append `nfa_b` to the end of `nfa_b`. Now, `nfa_a` accepts /a(aa)*b*/.
+        nfa_a.append(nfa_b);
 
         assert_eq!(nfa_a.simulate("bb".as_bytes()), None);
         assert_eq!(nfa_a.simulate("bba".as_bytes()), None);
