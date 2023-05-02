@@ -6,16 +6,24 @@ use std::collections::HashSet;
 /// the transition function. For NFAs, the transition function Delta has type (Q
 /// x Sigma) -> 2^Sigma, whereas for DFAs the transition function delta has type
 /// (Q x Sigma) -> Sigma.
-pub struct Automaton<State, Character, TransitionRange> {
-    transition: HashMap<(State, Character), TransitionRange>,
-    epsilon_transition: HashMap<State, TransitionRange>,
+pub struct Nfa<State, Character> {
+    /// Regular transitions consume an input character.
+    transition: HashMap<(State, Character), HashSet<State>>,
+    /// Epsilon transitions do not consume an input character.
+    epsilon_transition: HashMap<State, HashSet<State>>,
     start_state: State,
     accept_states: HashSet<State>,
     state_counter: State,
 }
 
-pub type Nfa<State, Character> = Automaton<State, Character, HashSet<State>>;
-pub type Dfa<State, Character> = Automaton<State, Character, State>;
+/// A Deterministic Finite Automaton (DFA) is like an NFA, but each transition
+/// leads to exactly one state.
+pub struct Dfa<State, Character> {
+    transition: HashMap<(State, Character), State>,
+    epsilon_transition: HashMap<State, State>,
+    start_state: State,
+    accept_states: HashSet<State>,
+}
 
 impl<
         State: std::cmp::Eq + std::hash::Hash + std::marker::Copy,
@@ -216,10 +224,26 @@ impl Nfa<u64, u8> {
         let q_other_start = self.get_corresponding_state(&mut state_map, other.start_state);
         (q_other_start, accept_states)
     }
-}
 
-pub fn nfa_to_dfa<State, Character>(nfa: &Nfa<State, Character>) -> Dfa<State, Character> {
-    panic!("Not implemented");
+    pub fn to_dfa(&self) -> Dfa<u64, u8> {
+        let mut dfa = Dfa::<HashSet<u64>, u8> {
+            transition: HashMap::new(),
+            epsilon_transition: HashMap::new(),
+            start_state: [self.start_state].iter().copied().collect(),
+            // Mathematically, the DFA's set of accept states is all subsets of
+            // the NFA's states that include an accept state.
+            accept_states: HashSet::new(),
+        };
+
+        // Each state in the DFA will correspond to a set of NFA states. For
+        // efficiency, we will build these as we come to them, rather than
+        // pre-allocating 2**n states.
+        let mut nfa_dfa_states: HashMap<HashSet<u64>, u64> = HashMap::new();
+
+        // TODO(dmcardle) Replace each unique state in `dfa` (type
+        // `HashSet<u64>`) with a numeric identifier.
+        panic!("not implemented")
+    }
 }
 
 #[cfg(test)]
