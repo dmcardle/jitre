@@ -5,10 +5,6 @@
 
 extern crate libc;
 
-mod machine;
-mod nfa;
-mod regex;
-
-fn main() {
-    println!("TBD!");
-}
+pub mod machine;
+pub mod nfa;
+pub mod regex;

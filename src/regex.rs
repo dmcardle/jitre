@@ -14,12 +14,10 @@ impl Regex {
     ///
     /// Grammar:
     ///
-    /// ```
-    /// <regex> ::= <literal>
-    ///           | <regex> <regex>        /* concatenation */
-    ///           | <regex> '|' <regex>    /* choice */
-    ///           | <regex> '*'            /* repetition */
-    /// ```
+    ///    <regex> ::= <literal>
+    ///              | <regex> <regex>        /* concatenation */
+    ///              | <regex> '|' <regex>    /* choice */
+    ///              | <regex> '*'            /* repetition */
     ///
     /// `<literal>` is defined as a sequence of any ASCII characters.
     ///
