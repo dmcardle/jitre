@@ -1,27 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::linear_collections::LinMultiMap;
-
-#[derive(Default)]
-struct RobinHasher {
-    state: u64,
-}
-
-impl Hasher for RobinHasher {
-    fn write(&mut self, bytes: &[u8]) {
-        bytes.iter().for_each(|&b| {
-            self.state = self.state.rotate_right(8) ^ (b as u64);
-        });
-    }
-
-    fn finish(&self) -> u64 {
-        self.state
-    }
-}
-
-type BuildRobinHasher = BuildHasherDefault<RobinHasher>;
 
 /// A Nondeterministic Finite Automaton (NFA) is defined as the tuple (Q, Sigma,
 /// Delta, q0, F). The difference from a Deterministic Finite Automaton (DFA) is
@@ -32,7 +12,7 @@ pub struct Nfa<State, Character> {
     /// Regular transitions consume an input character.
     transition: LinMultiMap<(State, Character), State>,
     /// Epsilon transitions do not consume an input character.
-    epsilon_transition: HashMap<State, HashSet<State>, BuildRobinHasher>,
+    epsilon_transition: LinMultiMap<State, State>,
     start_state: State,
     accept_states: HashSet<State>,
     state_counter: State,
@@ -42,7 +22,7 @@ pub struct Nfa<State, Character> {
 /// leads to exactly one state.
 pub struct Dfa<State, Character> {
     transition: LinMultiMap<(State, Character), State>,
-    epsilon_transition: HashMap<State, State>,
+    epsilon_transition: LinMultiMap<State, State>,
     start_state: State,
     accept_states: HashSet<State>,
 }
@@ -73,15 +53,7 @@ impl<
 
     /// Save an epsilon transition rule.
     pub fn add_epsilon(&mut self, from: State, to: State) {
-        match self.epsilon_transition.get_mut(&from) {
-            Some(to_states) => {
-                to_states.insert(to);
-            }
-            None => {
-                let to_set: HashSet<State> = [to].iter().cloned().collect();
-                self.epsilon_transition.insert(from, to_set);
-            }
-        }
+        self.epsilon_transition.insert(from, to);
     }
 
     /// Find all the states reachable via one or more epsilon transitions.
@@ -90,14 +62,12 @@ impl<
         let mut remaining = vec![from];
         while remaining.len() > 0 {
             let state = remaining.pop().unwrap();
-            match self.epsilon_transition.get(&state) {
-                Some(qs) => {
-                    seen.extend(qs);
-                    // No need to rexplore `state`.
-                    remaining.extend(qs.iter().filter(|&q| *q != state));
+            self.epsilon_transition.get(&state).for_each(|q| {
+                seen.insert(*q);
+                if *q != state {
+                    remaining.push(*q);
                 }
-                None => {}
-            };
+            });
         }
         seen
     }
@@ -150,7 +120,7 @@ impl Nfa<u64, u8> {
     pub fn new() -> Nfa<u64, u8> {
         Nfa::<u64, u8> {
             transition: LinMultiMap::new(),
-            epsilon_transition: HashMap::with_hasher(BuildRobinHasher::default()),
+            epsilon_transition: LinMultiMap::new(),
             start_state: 0u64,
             accept_states: HashSet::new(),
             state_counter: 1u64,
@@ -208,12 +178,10 @@ impl Nfa<u64, u8> {
             self.add_transition(from, *on, to);
         }
 
-        for (from, to_states) in other.epsilon_transition.iter() {
+        for (from, to) in other.epsilon_transition.iter() {
             let from = self.get_corresponding_state(&mut state_map, *from);
-            for to in to_states.iter() {
-                let to = self.get_corresponding_state(&mut state_map, *to);
-                self.add_epsilon(from, to);
-            }
+            let to = self.get_corresponding_state(&mut state_map, *to);
+            self.add_epsilon(from, to);
         }
 
         // Connect each accept state of `self` to the start state of `other`.
