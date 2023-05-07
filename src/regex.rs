@@ -60,8 +60,8 @@ impl Regex {
                     let (q_choice_start, orig_accept_states) = nfa.join(choice);
 
                     // The original accept states should still be valid.
-                    for q in orig_accept_states {
-                        nfa.set_accept(q);
+                    for q in orig_accept_states.iter() {
+                        nfa.set_accept(*q);
                     }
 
                     // Each choice's sub-NFA is reachable by an epsilon

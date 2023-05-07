@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
-
 use crate::linear_collections::LinMultiMap;
+use crate::linear_collections::LinSet;
+
+use std::collections::HashMap;
 
 /// A Nondeterministic Finite Automaton (NFA) is defined as the tuple (Q, Sigma,
 /// Delta, q0, F). The difference from a Deterministic Finite Automaton (DFA) is
@@ -14,7 +14,7 @@ pub struct Nfa<State, Character> {
     /// Epsilon transitions do not consume an input character.
     epsilon_transition: LinMultiMap<State, State>,
     start_state: State,
-    accept_states: HashSet<State>,
+    accept_states: LinSet<State>,
     state_counter: State,
 }
 
@@ -24,7 +24,7 @@ pub struct Dfa<State, Character> {
     transition: LinMultiMap<(State, Character), State>,
     epsilon_transition: LinMultiMap<State, State>,
     start_state: State,
-    accept_states: HashSet<State>,
+    accept_states: LinSet<State>,
 }
 
 impl<
@@ -57,8 +57,8 @@ impl<
     }
 
     /// Find all the states reachable via one or more epsilon transitions.
-    pub fn epsilon_transitive_closure(&self, from: State) -> HashSet<State> {
-        let mut seen = HashSet::new();
+    pub fn epsilon_transitive_closure(&self, from: State) -> LinSet<State> {
+        let mut seen = LinSet::new();
         let mut remaining = vec![from];
         while remaining.len() > 0 {
             let state = remaining.pop().unwrap();
@@ -79,21 +79,26 @@ impl<
         }
 
         let mut best_answer = None;
-        let mut state_superposition = HashSet::new();
+        let mut state_superposition = LinSet::new();
         state_superposition.insert(self.start_state);
+
         let epsilon_reachable = self.epsilon_transitive_closure(self.start_state);
-        state_superposition.extend(epsilon_reachable);
+        epsilon_reachable.iter().for_each(|q| {
+            state_superposition.insert(*q);
+        });
 
         for (i, c) in s.iter().enumerate() {
             state_superposition = state_superposition
-                .into_iter()
+                .iter()
                 .map(|q| {
-                    let mut result = HashSet::new();
+                    let mut result = LinSet::new();
 
-                    for &state in self.transition.get_all(&(q, *c)) {
+                    for &state in self.transition.get_all(&(*q, *c)) {
                         result.insert(state);
                         let epsilon_reachable = self.epsilon_transitive_closure(state);
-                        result.extend(epsilon_reachable);
+                        epsilon_reachable.iter().for_each(|q| {
+                            result.insert(*q);
+                        });
                     }
                     result
                 })
@@ -101,7 +106,7 @@ impl<
                 .collect();
 
             // There's no possibilities for parsing up to position |i|.
-            if state_superposition.len() == 0 {
+            if state_superposition.iter().count() == 0 {
                 break;
             }
 
@@ -122,7 +127,7 @@ impl Nfa<u64, u8> {
             transition: LinMultiMap::new(),
             epsilon_transition: LinMultiMap::new(),
             start_state: 0u64,
-            accept_states: HashSet::new(),
+            accept_states: LinSet::new(),
             state_counter: 1u64,
         }
     }
@@ -168,7 +173,7 @@ impl Nfa<u64, u8> {
     /// Returns a tuple. The first element is the new start state corresponding
     /// to `other`'s start state. The second element is the original set of
     /// accept states.
-    pub fn join(&mut self, other: Nfa<u64, u8>) -> (u64, HashSet<u64>) {
+    pub fn join(&mut self, other: Nfa<u64, u8>) -> (u64, LinSet<u64>) {
         // For each state in `other`, allocate a corresponding fresh state.
         let mut state_map: HashMap<u64, u64> = HashMap::new();
 
@@ -186,7 +191,7 @@ impl Nfa<u64, u8> {
 
         // Connect each accept state of `self` to the start state of `other`.
 
-        let accept_states = self.accept_states.clone();
+        let accept_states = self.accept_states.iter().copied().collect();
         self.accept_states.clear();
 
         // Add each accept state in `other` to this NFA.
