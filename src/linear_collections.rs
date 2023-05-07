@@ -52,18 +52,17 @@ impl<V: Eq + Copy> LinSet<V> {
         }
         self.len += 1;
     }
+    pub fn contains(&self, v: &V) -> bool {
+        self.backing.contains(v)
+    }
+    pub fn len(&self) -> usize {
+        self.len
+    }
     pub fn iter(&self) -> impl Iterator<Item = &V> {
         self.backing.iter()
     }
     pub fn is_disjoint(&self, other: &LinSet<V>) -> bool {
-        // Uh oh, this is an O(n^2) operation.
-        self.iter().all(|v| !other.contains(v))
-    }
-    pub fn contains(&self, v: &V) -> bool {
-        self.backing.iter().any(|v1| v1 == v)
-    }
-    pub fn len(&self) -> usize {
-        self.len
+        !self.iter().any(|v| other.contains(v))
     }
 }
 

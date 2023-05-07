@@ -25,11 +25,7 @@ pub struct Dfa<State, Character> {
     accept_states: LinSet<State>,
 }
 
-impl<
-        State: std::cmp::Eq + std::hash::Hash + std::marker::Copy,
-        Character: std::cmp::Eq + std::hash::Hash + std::marker::Copy,
-    > Nfa<State, Character>
-{
+impl<State: Eq + Copy, Character: Eq + Copy> Nfa<State, Character> {
     /// Get this NFA's start state.
     pub fn start_state(&self) -> State {
         self.start_state
@@ -60,10 +56,10 @@ impl<
         let mut remaining = vec![from];
         while remaining.len() > 0 {
             let state = remaining.pop().unwrap();
-            self.epsilon_transition.get(&state).for_each(|q| {
-                seen.insert(*q);
-                if *q != state {
-                    remaining.push(*q);
+            self.epsilon_transition.get(&state).for_each(|&q| {
+                seen.insert(q);
+                if q != state {
+                    remaining.push(q);
                 }
             });
         }
@@ -85,22 +81,22 @@ impl<
             state_superposition.insert(*q);
         });
 
-        for (i, c) in s.iter().enumerate() {
+        for (i, &c) in s.iter().enumerate() {
             state_superposition = state_superposition
                 .iter()
-                .map(|q| {
+                .flat_map(|&q| {
                     let mut result = LinSet::new();
 
-                    for &state in self.transition.get_all(&(*q, *c)) {
+                    for &state in self.transition.get(&(q, c)) {
                         result.insert(state);
-                        let epsilon_reachable = self.epsilon_transitive_closure(state);
-                        epsilon_reachable.iter().for_each(|q| {
+
+                        // Add every epsilon-reachable state to |result|.
+                        self.epsilon_transitive_closure(state).iter().for_each(|q| {
                             result.insert(*q);
                         });
                     }
                     result
                 })
-                .flatten()
                 .collect();
 
             // There's no possibilities for parsing up to position |i|.
