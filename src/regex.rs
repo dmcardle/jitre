@@ -1,3 +1,5 @@
+extern crate test;
+
 use crate::nfa::Nfa;
 
 /// A `Regex` is a classical regular expression.
@@ -253,6 +255,7 @@ fn parse_regex_tokens<'a>(tokens: &'a [RegexToken]) -> Option<(Regex, &'a [Regex
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test::Bencher;
 
     #[test]
     fn test_regex_interpret_simple() {
@@ -463,5 +466,36 @@ mod tests {
         assert_eq!(nfa.simulate("abc".as_bytes()), None);
         assert_eq!(nfa.simulate("abc 1011".as_bytes()), None);
         assert_eq!(nfa.simulate("abc 1011@".as_bytes()), None);
+    }
+
+    #[bench]
+    fn bench_regex_to_nfa(b: &mut Bencher) {
+        let patterns = [
+            "a*b",
+            "a(b|c|d)*",
+            "twas brillig and the slithy toves",
+            "did (gyre (and|or))* gimble* in the wabe",
+            "(a*|b**|c|d)*|ef|g|h|i|j*|k|l",
+        ];
+        // We care more about the regex parsing and conversion to NFA than the
+        // actual NFA simulation, so it's okay to keep these inputs short.
+        let inputs = [
+            "apple banana strawberry coconut",
+            "cat dog bird elephant weasel",
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa",
+        ];
+        b.iter(|| {
+            (0..10).for_each(|_| {
+                patterns.iter().for_each(|p| {
+                    let regex = Regex::parse(p);
+                    assert!(regex.is_some());
+
+                    let nfa = regex.unwrap().to_nfa();
+                    inputs.iter().for_each(|s| {
+                        nfa.simulate(s.as_bytes());
+                    });
+                });
+            });
+        });
     }
 }

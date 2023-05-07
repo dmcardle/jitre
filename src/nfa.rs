@@ -1,5 +1,25 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::hash::{BuildHasherDefault, Hasher};
+
+#[derive(Default)]
+struct RobinHasher {
+    state: u64,
+}
+
+impl Hasher for RobinHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        bytes.iter().for_each(|&b| {
+            self.state = self.state.rotate_right(8) ^ (b as u64);
+        });
+    }
+
+    fn finish(&self) -> u64 {
+        self.state
+    }
+}
+
+type BuildRobinHasher = BuildHasherDefault<RobinHasher>;
 
 /// A Nondeterministic Finite Automaton (NFA) is defined as the tuple (Q, Sigma,
 /// Delta, q0, F). The difference from a Deterministic Finite Automaton (DFA) is
@@ -8,9 +28,9 @@ use std::collections::HashSet;
 /// (Q x Sigma) -> Sigma.
 pub struct Nfa<State, Character> {
     /// Regular transitions consume an input character.
-    transition: HashMap<(State, Character), HashSet<State>>,
+    transition: HashMap<(State, Character), HashSet<State>, BuildRobinHasher>,
     /// Epsilon transitions do not consume an input character.
-    epsilon_transition: HashMap<State, HashSet<State>>,
+    epsilon_transition: HashMap<State, HashSet<State>, BuildRobinHasher>,
     start_state: State,
     accept_states: HashSet<State>,
     state_counter: State,
@@ -140,8 +160,8 @@ impl<
 impl Nfa<u64, u8> {
     pub fn new() -> Nfa<u64, u8> {
         Nfa::<u64, u8> {
-            transition: HashMap::new(),
-            epsilon_transition: HashMap::new(),
+            transition: HashMap::with_hasher(BuildRobinHasher::default()),
+            epsilon_transition: HashMap::with_hasher(BuildRobinHasher::default()),
             start_state: 0u64,
             accept_states: HashSet::new(),
             state_counter: 1u64,

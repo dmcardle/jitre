@@ -2,6 +2,7 @@
 // machine code. This is probably a terrible idea, but maybe it will be fast!
 
 #![feature(split_inclusive)]
+#![feature(test)]
 
 extern crate libc;
 
