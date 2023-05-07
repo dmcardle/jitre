@@ -1,8 +1,6 @@
 use crate::linear_collections::LinMultiMap;
 use crate::linear_collections::LinSet;
 
-use std::collections::HashMap;
-
 /// A Nondeterministic Finite Automaton (NFA) is defined as the tuple (Q, Sigma,
 /// Delta, q0, F). The difference from a Deterministic Finite Automaton (DFA) is
 /// the transition function. For NFAs, the transition function Delta has type (Q
@@ -139,13 +137,17 @@ impl Nfa<u64, u8> {
         fresh_state
     }
 
-    fn get_corresponding_state(&mut self, map: &mut HashMap<u64, u64>, qOther: u64) -> u64 {
-        match map.get(&qOther) {
+    fn get_corresponding_state(&mut self, map: &mut LinMultiMap<u64, u64>, qOther: u64) -> u64 {
+        let mut matches = map.get(&qOther);
+        let q = matches.next();
+        assert_eq!(matches.count(), 0);
+
+        match q {
             Some(q) => *q,
             None => {
-                let qFresh = self.get_fresh_state();
-                map.insert(qOther, qFresh);
-                qFresh
+                let q_fresh = self.get_fresh_state();
+                map.insert(qOther, q_fresh);
+                q_fresh
             }
         }
     }
@@ -175,7 +177,7 @@ impl Nfa<u64, u8> {
     /// accept states.
     pub fn join(&mut self, other: Nfa<u64, u8>) -> (u64, LinSet<u64>) {
         // For each state in `other`, allocate a corresponding fresh state.
-        let mut state_map: HashMap<u64, u64> = HashMap::new();
+        let mut state_map: LinMultiMap<u64, u64> = LinMultiMap::new();
 
         for ((from, on), to) in other.transition.iter() {
             let from = self.get_corresponding_state(&mut state_map, *from);
