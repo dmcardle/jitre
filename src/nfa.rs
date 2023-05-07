@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::hash::{BuildHasherDefault, Hasher};
 
+use crate::linear_collections::LinMultiMap;
+
 #[derive(Default)]
 struct RobinHasher {
     state: u64,
@@ -28,7 +30,7 @@ type BuildRobinHasher = BuildHasherDefault<RobinHasher>;
 /// (Q x Sigma) -> Sigma.
 pub struct Nfa<State, Character> {
     /// Regular transitions consume an input character.
-    transition: HashMap<(State, Character), HashSet<State>, BuildRobinHasher>,
+    transition: LinMultiMap<(State, Character), State>,
     /// Epsilon transitions do not consume an input character.
     epsilon_transition: HashMap<State, HashSet<State>, BuildRobinHasher>,
     start_state: State,
@@ -39,7 +41,7 @@ pub struct Nfa<State, Character> {
 /// A Deterministic Finite Automaton (DFA) is like an NFA, but each transition
 /// leads to exactly one state.
 pub struct Dfa<State, Character> {
-    transition: HashMap<(State, Character), State>,
+    transition: LinMultiMap<(State, Character), State>,
     epsilon_transition: HashMap<State, State>,
     start_state: State,
     accept_states: HashSet<State>,
@@ -66,16 +68,7 @@ impl<
 
     /// Save a non-epsilon transition rule.
     pub fn add_transition(&mut self, from: State, on: Character, to: State) {
-        let key = (from, on);
-        match self.transition.get_mut(&key) {
-            Some(to_states) => {
-                to_states.insert(to);
-            }
-            None => {
-                let to_set: HashSet<State> = [to].iter().cloned().collect();
-                self.transition.insert((from, on), to_set);
-            }
-        }
+        self.transition.insert((from, on), to);
     }
 
     /// Save an epsilon transition rule.
@@ -121,18 +114,14 @@ impl<
         let epsilon_reachable = self.epsilon_transitive_closure(self.start_state);
         state_superposition.extend(epsilon_reachable);
 
-        let empty = HashSet::new();
         for (i, c) in s.iter().enumerate() {
             state_superposition = state_superposition
                 .into_iter()
                 .map(|q| {
                     let mut result = HashSet::new();
-                    let regular = match self.transition.get(&(q, *c)) {
-                        Some(x) => x,
-                        None => &empty,
-                    };
-                    result.extend(regular);
-                    for &state in regular {
+
+                    for &state in self.transition.get_all(&(q, *c)) {
+                        result.insert(state);
                         let epsilon_reachable = self.epsilon_transitive_closure(state);
                         result.extend(epsilon_reachable);
                     }
@@ -160,7 +149,7 @@ impl<
 impl Nfa<u64, u8> {
     pub fn new() -> Nfa<u64, u8> {
         Nfa::<u64, u8> {
-            transition: HashMap::with_hasher(BuildRobinHasher::default()),
+            transition: LinMultiMap::new(),
             epsilon_transition: HashMap::with_hasher(BuildRobinHasher::default()),
             start_state: 0u64,
             accept_states: HashSet::new(),
@@ -213,13 +202,10 @@ impl Nfa<u64, u8> {
         // For each state in `other`, allocate a corresponding fresh state.
         let mut state_map: HashMap<u64, u64> = HashMap::new();
 
-        for ((from, on), to_states) in other.transition.iter() {
+        for ((from, on), to) in other.transition.iter() {
             let from = self.get_corresponding_state(&mut state_map, *from);
-
-            for to in to_states.iter() {
-                let to = self.get_corresponding_state(&mut state_map, *to);
-                self.add_transition(from, *on, to);
-            }
+            let to = self.get_corresponding_state(&mut state_map, *to);
+            self.add_transition(from, *on, to);
         }
 
         for (from, to_states) in other.epsilon_transition.iter() {
@@ -245,25 +231,28 @@ impl Nfa<u64, u8> {
         (q_other_start, accept_states)
     }
 
-    pub fn to_dfa(&self) -> Dfa<u64, u8> {
-        let mut dfa = Dfa::<HashSet<u64>, u8> {
-            transition: HashMap::new(),
-            epsilon_transition: HashMap::new(),
-            start_state: [self.start_state].iter().copied().collect(),
-            // Mathematically, the DFA's set of accept states is all subsets of
-            // the NFA's states that include an accept state.
-            accept_states: HashSet::new(),
-        };
+    // TODO(dmcardle): create the LinSet type, implement Clone for it, and use
+    // it here, as in `Dfa<LinSet<u64>, u8>`.
 
-        // Each state in the DFA will correspond to a set of NFA states. For
-        // efficiency, we will build these as we come to them, rather than
-        // pre-allocating 2**n states.
-        let mut nfa_dfa_states: HashMap<HashSet<u64>, u64> = HashMap::new();
+    // pub fn to_dfa(&self) -> Dfa<u64, u8> {
+    //     let mut dfa = Dfa::<HashSet<u64>, u8> {
+    //         transition: LinMultiMap::new(),
+    //         epsilon_transition: HashMap::new(),
+    //         start_state: [self.start_state].iter().copied().collect(),
+    //         // Mathematically, the DFA's set of accept states is all subsets of
+    //         // the NFA's states that include an accept state.
+    //         accept_states: HashSet::new(),
+    //     };
 
-        // TODO(dmcardle) Replace each unique state in `dfa` (type
-        // `HashSet<u64>`) with a numeric identifier.
-        panic!("not implemented")
-    }
+    //     // Each state in the DFA will correspond to a set of NFA states. For
+    //     // efficiency, we will build these as we come to them, rather than
+    //     // pre-allocating 2**n states.
+    //     let mut nfa_dfa_states: HashMap<HashSet<u64>, u64> = HashMap::new();
+
+    //     // TODO(dmcardle) Replace each unique state in `dfa` (type
+    //     // `HashSet<u64>`) with a numeric identifier.
+    //     panic!("not implemented")
+    // }
 }
 
 #[cfg(test)]

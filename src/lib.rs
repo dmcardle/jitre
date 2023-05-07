@@ -6,6 +6,7 @@
 
 extern crate libc;
 
+pub mod linear_collections;
 pub mod machine;
 pub mod nfa;
 pub mod regex;
