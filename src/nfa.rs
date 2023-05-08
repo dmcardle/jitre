@@ -1,11 +1,27 @@
+//! Finite automata.
+//!
+//! This module contains representations of Nondeterministic Finite Automata
+//! (NFA) and Deterministic Finite Automata (DFA) in `Nfa` and `Dfa`
+//! respectively.
+//!
+//! A Nondeterministic Finite Automaton (NFA) is defined as the tuple (Q, Sigma,
+//! Delta, q0, F). The difference from a Deterministic Finite Automaton (DFA) is
+//! the transition function. For NFAs, the transition function Delta has type (Q
+//! x Sigma) -> 2^Sigma, whereas for DFAs the transition function delta has type
+//! (Q x Sigma) -> Sigma.
+//!
+//! That is, NFA transitions map one state to a set of states, while DFA
+//! transitions map one state to exactly one state.
+//!
+//! Computationally, NFAs are equivalent to DFAs.
+//!
+//! **TODO**: Implement `Nfa::to_dfa()`.
+//!
+//! **TODO**: Implement `Dfa::to_machine_code()`.
+
 use crate::linear_collections::LinMultiMap;
 use crate::linear_collections::LinSet;
 
-/// A Nondeterministic Finite Automaton (NFA) is defined as the tuple (Q, Sigma,
-/// Delta, q0, F). The difference from a Deterministic Finite Automaton (DFA) is
-/// the transition function. For NFAs, the transition function Delta has type (Q
-/// x Sigma) -> 2^Sigma, whereas for DFAs the transition function delta has type
-/// (Q x Sigma) -> Sigma.
 pub struct Nfa<State, Character> {
     /// Regular transitions consume an input character.
     transition: LinMultiMap<(State, Character), State>,
