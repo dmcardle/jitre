@@ -133,8 +133,9 @@ impl Nfa<u64, u8> {
         fresh_state
     }
 
-    fn get_corresponding_state(&mut self, map: &mut LinMultiMap<u64, u64>, qOther: u64) -> u64 {
-        let mut matches = map.get(&qOther);
+    fn get_corresponding_state(&mut self, map: &mut LinMultiMap<u64, u64>, q_other: u64) -> u64 {
+        // TODO(dmcardle) Switch to a regular map instead of a multimap.
+        let mut matches = map.get(&q_other);
         let q = matches.next();
         assert_eq!(matches.count(), 0);
 
@@ -142,7 +143,7 @@ impl Nfa<u64, u8> {
             Some(q) => *q,
             None => {
                 let q_fresh = self.get_fresh_state();
-                map.insert(qOther, q_fresh);
+                map.insert(q_other, q_fresh);
                 q_fresh
             }
         }

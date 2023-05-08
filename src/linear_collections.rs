@@ -66,6 +66,7 @@ impl<V: Eq + Copy> LinSet<V> {
     }
 }
 
+// TODO: Make this iterator return references.
 impl<V: Copy> Iterator for LinSet<V> {
     type Item = V;
     fn next(&mut self) -> Option<Self::Item> {

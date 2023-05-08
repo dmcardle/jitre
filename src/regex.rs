@@ -74,6 +74,8 @@ impl Regex {
                 // corresponding accept state in `nfa`.
                 nfa.append(r.to_nfa());
 
+                // Add an epsilon transition from each of the accept states back
+                // to the start state.
                 let accept_states: Vec<u64> = nfa.accept_states().copied().collect();
                 for q_accept in accept_states {
                     nfa.add_epsilon(q_accept, nfa.start_state());
