@@ -62,7 +62,7 @@ impl<V: Eq + Copy> LinSet<V> {
         self.backing.iter()
     }
     pub fn is_disjoint(&self, other: &LinSet<V>) -> bool {
-        !self.iter().any(|v| other.contains(v))
+        self.iter().all(|v| !other.contains(v))
     }
 }
 
