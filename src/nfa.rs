@@ -1,14 +1,15 @@
 //! Finite automata.
+
 //!
 //! This module contains representations of Nondeterministic and Deterministic
 //! Finite Automata in [Nfa] and [Dfa].
 //!
 //! ## Performance
 //!
-//! At first, I represented NFA transitions with `HashMap<(State,Character),
-//! HashSet<State>>`. While this matches the concept of a transition function,
-//! the hashing is a lot of extra overhead. After all, the items are just
-//! fixed-size integers! This was the inspiration for
+//! At first, I represented NFA transitions with
+//! [HashMap<(State,Character),HashSet<State>>]. While this matches the concept
+//! of a transition function, the hashing is a lot of extra overhead. After all,
+//! the items are just fixed-size integers! This was the inspiration for
 //! [crate::linear_collections].
 //!
 //! ## Remaining Work
@@ -38,10 +39,9 @@ pub struct Nfa<State, Character> {
 /// A Deterministic Finite Automaton (DFA) is like an NFA, but each transition
 /// leads to exactly one state.
 pub struct Dfa<State, Character> {
-    transition: LinMultiMap<(State, Character), State>,
-    epsilon_transition: LinMultiMap<State, State>,
-    start_state: State,
-    accept_states: LinSet<State>,
+    pub transition: LinMultiMap<(State, Character), State>,
+    pub start_state: State,
+    pub accept_states: LinSet<State>,
 }
 
 impl<State: Eq + Copy, Character: Eq + Copy> Nfa<State, Character> {

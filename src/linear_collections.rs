@@ -20,6 +20,9 @@ impl<K: Eq + Copy, V: Eq + Copy> LinMultiMap<K, V> {
             .filter(move |(k1, _)| k1 == &owned_k)
             .map(|(_, v)| v)
     }
+    pub fn get_first<'a>(&'a self, k: &K) -> Option<&'a V> {
+        self.get(k).next()
+    }
     pub fn get_all<'a>(&'a self, k: &K) -> Vec<&'a V> {
         self.get(k).collect()
     }

@@ -18,7 +18,7 @@ impl Regex {
     ///
     /// Grammar:
     ///
-    /// ```
+    /// ```bnf
     ///    <regex> ::= <literal>
     ///              | <regex> <regex>        /* concatenation */
     ///              | <regex> '|' <regex>    /* choice */
