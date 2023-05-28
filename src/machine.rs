@@ -160,8 +160,10 @@ pub fn dfa_to_simple_ops(dfa: &Dfa<u16, u8>) -> Vec<SimpleOp> {
 // Adapted from https://make-a-demo-tool-in-rust.github.io/1-3-jit.html.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn run_machine_code(code: &[u8], line: &str) -> i32 {
+    const PAGE_SIZE: usize = 4096;
+    // TODO try to eliminate this copy
+    let c_string = CString::new(line).unwrap();
     unsafe {
-        const PAGE_SIZE: usize = 4096;
         let mut raw_addr: *mut libc::c_void = std::mem::zeroed();
         libc::posix_memalign(&mut raw_addr, PAGE_SIZE, code.len());
         libc::mprotect(
@@ -169,11 +171,13 @@ fn run_machine_code(code: &[u8], line: &str) -> i32 {
             code.len(),
             libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC,
         );
+        // TODO try to eliminate this copy
         libc::memcpy(raw_addr, std::mem::transmute(code.as_ptr()), code.len());
         let func: unsafe extern "C" fn(*const c_char) -> i32 = std::mem::transmute(raw_addr);
-        let c_string = CString::new(line).unwrap();
+        // TODO remove PROT_WRITE before calling `func`. For reasons I do not
+        // understand, calling `libc::mprotect`` a second time seems to cause a
+        // segfault.
         let result = func(c_string.into_raw());
-        println!("asm returned {}", result);
         std::mem::drop(raw_addr);
         result
     }
