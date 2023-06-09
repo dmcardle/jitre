@@ -79,7 +79,8 @@ impl Regex {
                 nfa.append(r.to_nfa());
 
                 // Add an epsilon transition from each of the accept states back
-                // to the start state.
+                // to the start state. (I can't figure out how to get rid of
+                // this copy without borrowing `nfa` as immutable and mutable.)
                 let accept_states: Vec<u64> = nfa.accept_states().copied().collect();
                 for q_accept in accept_states {
                     nfa.add_epsilon(q_accept, nfa.start_state());
@@ -165,7 +166,6 @@ fn tokenize(expr: &str) -> Vec<RegexToken> {
         match c {
             '(' => tokens.push(RegexToken::LeftParen),
             ')' => tokens.push(RegexToken::RightParen),
-
             '|' => tokens.push(RegexToken::Pipe),
             '*' => tokens.push(RegexToken::Star),
             _ => literal.push(c),
