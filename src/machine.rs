@@ -20,52 +20,41 @@ pub enum SimpleOp {
 fn assemble(instructions: &[SimpleOp]) -> Vec<u8> {
     // The first pass builds the lookup table from labels IDs to instruction
     // pointer (relative to the first instruction).
-    let (label_to_ip, size) = instructions.iter().fold(
-        (LinMultiMap::new(), 0u32),
-        |(mut map, n), instr| match instr {
-            SimpleOp::Label(k) => {
-                map.insert(k, n);
-                (map, n)
-            }
-            SimpleOp::JumpToLabel(_) => (map, n + 5),
-            SimpleOp::JumpToLabelIfEq(_, _) => (map, n + 8),
-            SimpleOp::LoadByte => (map, n + 6),
-            SimpleOp::LoadImm(_) => (map, n + 2),
-            SimpleOp::Return => (map, n + 1),
-        },
-    );
+    let (label_to_ip, size) =
+        instructions
+            .iter()
+            .fold((LinMultiMap::new(), 0), |(mut map, n), instr| match instr {
+                SimpleOp::Label(k) => {
+                    map.insert(k, n);
+                    (map, n)
+                }
+                SimpleOp::JumpToLabel(_) => (map, n + 5),
+                SimpleOp::JumpToLabelIfEq(_, _) => (map, n + 8),
+                SimpleOp::LoadByte => (map, n + 6),
+                SimpleOp::LoadImm(_) => (map, n + 2),
+                SimpleOp::Return => (map, n + 1),
+            });
 
     let mut out = Vec::with_capacity(size as usize);
     instructions.iter().for_each(|instr| {
         match instr {
             SimpleOp::Label(_) => {}
             SimpleOp::JumpToLabel(k) => {
-                let dest: i32 = *label_to_ip.get_first(&k).unwrap() as i32;
+                let dest: i32 = *label_to_ip.get_first(&k).unwrap();
                 let rel: i32 = dest - out.len() as i32 - 5;
                 // jmp rel32
-                out.extend_from_slice(&[
-                    0xe9,
-                    rel as u8,
-                    (rel >> 8) as u8,
-                    (rel >> 16) as u8,
-                    (rel >> 24) as u8,
-                ]);
+                out.push(0xe9);
+                out.extend_from_slice(&rel.to_le_bytes());
             }
             SimpleOp::JumpToLabelIfEq(label, byte_imm) => {
                 let dest: i32 = *label_to_ip.get_first(&label).unwrap() as i32;
                 let rel: i32 = dest - out.len() as i32 - 8;
                 out.extend_from_slice(&[
                     // cmp al, ${byteImm}
-                    0x3c,
-                    *byte_imm,
-                    // je ${label}
-                    0x0f,
-                    0x84,
-                    rel as u8,
-                    (rel >> 8) as u8,
-                    (rel >> 16) as u8,
-                    (rel >> 24) as u8,
+                    0x3c, *byte_imm, // je ${relative offset to label}
+                    0x0f, 0x84,
                 ]);
+                out.extend_from_slice(&rel.to_le_bytes());
             }
             SimpleOp::LoadByte => {
                 // Dereference RDI to load one byte, then increment RDI.
@@ -118,9 +107,12 @@ fn assemble(instructions: &[SimpleOp]) -> Vec<u8> {
 ///
 /// ```
 pub fn dfa_to_simple_ops(dfa: &Dfa<u16, u8>) -> Vec<SimpleOp> {
-    const LABEL_ACCEPT: LabelId = 0xffff;
+    const LABEL_ACCEPT: LabelId = -1;
+    const LABEL_REJECT: LabelId = -2;
 
     let mut ops: Vec<SimpleOp> = Vec::new();
+
+    ops.push(SimpleOp::JumpToLabel(dfa.start_state.into()));
 
     // TODO: calculate the size of each instruction to determine the label
     // value. Then use the function hooking technique from the iced_tea readme
@@ -130,7 +122,7 @@ pub fn dfa_to_simple_ops(dfa: &Dfa<u16, u8>) -> Vec<SimpleOp> {
     let mut transition_table = LinMultiMap::new();
     for ((from, on), to) in dfa.transition.iter() {
         states.insert(*from);
-        transition_table.insert(*from, (on, to));
+        transition_table.insert(*from, (*on, *to));
     }
 
     for state in states {
@@ -143,8 +135,20 @@ pub fn dfa_to_simple_ops(dfa: &Dfa<u16, u8>) -> Vec<SimpleOp> {
             // TODO: compare the loaded byte to `on`. If they match, then jump
             // to the state with label `to`. If `to` is an accept state, instead
             // jump to `LABEL_ACCEPT`.
-            panic!("unfinished")
+
+            ops.push(SimpleOp::JumpToLabelIfEq(*to as i32, *on));
         }
+
+        ops.push(SimpleOp::JumpToLabelIfEq(
+            if dfa.accept_states.contains(&state) {
+                LABEL_ACCEPT
+            } else {
+                LABEL_REJECT
+            },
+            b'\0',
+        ));
+
+        ops.push(SimpleOp::JumpToLabel(LABEL_REJECT));
     }
 
     ops.push(SimpleOp::Label(LABEL_ACCEPT));
@@ -209,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_assemble_simple() {
-        // Build a SimpleOp machine that matches /f(o|b)/.
+        // Build a SimpleOp machine that matches /f(o|b)(o|b)*/.
         const REJECT_STATE: i32 = -1;
         const ACCEPT_STATE: i32 = 0;
         let instructions = [
@@ -223,8 +227,18 @@ mod tests {
             // --- State 2. Match 'o' or 'b'.
             SimpleOp::Label(2),
             SimpleOp::LoadByte,
-            SimpleOp::JumpToLabelIfEq(ACCEPT_STATE, b'o'),
-            SimpleOp::JumpToLabelIfEq(ACCEPT_STATE, b'b'),
+            SimpleOp::JumpToLabelIfEq(3, b'o'),
+            SimpleOp::JumpToLabelIfEq(3, b'b'),
+            SimpleOp::JumpToLabel(REJECT_STATE),
+            // --- State 3. Match 'o' or 'b', repeated.
+            SimpleOp::Label(3),
+            SimpleOp::LoadByte,
+            // If we see 'o' or 'b', loop back to this same state. Note that
+            // this backwards jump tests that we correctly encode a negative
+            // relative JE instruction.
+            SimpleOp::JumpToLabelIfEq(3, b'o'),
+            SimpleOp::JumpToLabelIfEq(3, b'b'),
+            SimpleOp::JumpToLabelIfEq(ACCEPT_STATE, b'\0'),
             SimpleOp::JumpToLabel(REJECT_STATE),
             // --- "Reject" State.
             SimpleOp::Label(REJECT_STATE),
@@ -240,6 +254,7 @@ mod tests {
 
         assert_eq!(1, run_machine_code(&code, &"fo"));
         assert_eq!(1, run_machine_code(&code, &"fb"));
+        assert_eq!(1, run_machine_code(&code, &"fooboo"));
         assert_eq!(0, run_machine_code(&code, &"go"));
         assert_eq!(0, run_machine_code(&code, &"fx"));
         assert_eq!(0, run_machine_code(&code, &"f"));
