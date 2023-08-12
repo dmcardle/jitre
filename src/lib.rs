@@ -10,7 +10,6 @@
 //! 4. to [nfa::Dfa]
 //! 5. to machine code (in progress)
 
-#![feature(split_inclusive)]
 #![feature(test)]
 
 extern crate libc;
